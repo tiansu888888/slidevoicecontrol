@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!--  SEO Meta Tags                                          -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <title>GesturePPT – AI Hand Gesture & Voice Controlled Presentation Viewer</title>
+    <meta name="description"
+        content="GesturePPT is a free, browser-based AI presentation tool. Control your PDF and PowerPoint slides hands-free using hand gestures (MediaPipe AI) and voice commands. No installation required.">
+    <meta name="keywords"
+        content="gesture controlled presentation, hand gesture PPT, AI presentation controller, voice controlled slides, MediaPipe hands, PDF presenter, PPTX viewer, hands-free presenter, no mouse presentation, AI slide control">
+    <meta name="author" content="GesturePPT Team">
+    <meta name="robots" content="index, follow">
+    <link rel="canonical" href="https://gesture-ppt.app/">
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!--  Open Graph / Social Sharing                           -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="GesturePPT – AI Hand Gesture Presentation Viewer">
+    <meta property="og:description"
+        content="Control your presentations with hand gestures and voice. Upload PDF or PPTX and present hands-free using AI.">
+    <meta property="og:url" content="https://gesture-ppt.app/">
+    <meta property="og:site_name" content="GesturePPT">
+    <meta property="og:locale" content="en_MY">
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!--  Twitter / X Card                                       -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="GesturePPT – AI Hand Gesture Presentation Viewer">
+    <meta name="twitter:description"
+        content="Free browser-based tool to control PDF/PPTX slides with hand gestures and voice.">
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!--  GEO Tags (Malaysia / Southeast Asia)                  -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <meta name="geo.region" content="MY">
+    <meta name="geo.placename" content="Kuala Lumpur, Malaysia">
+    <meta name="ICBM" content="3.1390, 101.6869">
+    <meta name="geo.position" content="3.1390;101.6869">
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!--  Structured Data (schema.org)                          -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "GesturePPT",
+      "description": "A free browser-based AI presentation viewer that allows hands-free control of PDF and PPTX slides using hand gestures (MediaPipe) and voice commands (Web Speech API).",
+      "url": "https://gesture-ppt.app/",
+      "applicationCategory": "PresentationApplication",
+      "operatingSystem": "Any (Browser-based)",
+      "browserRequirements": "Requires Chrome, Edge, or Firefox with camera access",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "featureList": [
+        "Hand gesture slide control via MediaPipe AI",
+        "Voice command slide navigation",
+        "PDF presentation rendering",
+        "PPTX to HTML conversion",
+        "Full-screen presentation mode",
+        "Works offline – no server required"
+      ]
+    }
+    </script>
+
+    <link rel="stylesheet" href="style.css">
+
+    <!-- MediaPipe Hands (AI Vision) -->
+    <script src="libs/mediapipe/vision_bundle.js" crossorigin="anonymous"></script>
+    <!-- PDF.js -->
+    <script src="libs/pdfjs/pdf.min.js"></script>
+
+    <!-- PPTXjs Dependencies -->
+    <link rel="stylesheet" href="libs/pptxjs/css/pptxjs.css">
+    <script src="libs/others/jquery.min.js"></script>
+    <script src="libs/others/jszip.min.js"></script>
+    <script src="libs/others/jszip-utils.min.js"></script>
+    <script src="libs/others/d3.min.js"></script>
+    <script src="libs/others/nv.d3.min.js"></script>
+    <script src="libs/pptxjs/js/pptxjs.js"></script>
+    <script src="libs/pptxjs/js/divs2slides.js"></script>
+
+    <!-- Howler for Audio -->
+    <script src="libs/others/howler.min.js"></script>
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Sidebar / Control Panel -->
+        <aside class="sidebar">
+            <h1>GesturePPT</h1>
+
+            <div class="control-group">
+                <label for="fileInput" class="upload-btn">
+                    Upload Presentation
+                    <input type="file" id="fileInput" accept=".pdf, .pptx" hidden>
+                </label>
+                <button id="resetBtn" class="upload-btn" style="background-color: #ef4444; margin-top: 5px;">Reset /
+                    Clear</button>
+                <p class="file-status" id="fileStatus">No file selected</p>
+                <div class="note">Supports PDF and PPTX (experimental)</div>
+            </div>
+
+            <div class="camera-container">
+                <button id="start-cam-btn"
+                    style="position: absolute; z-index: 1000; top: 10px; left: 10px; padding: 5px 10px; background: #22c55e; border: none; color: white; border-radius: 5px; cursor: pointer;">Start
+                    Camera Force</button>
+                <video id="webcam" autoplay playsinline></video>
+                <canvas id="output_canvas"></canvas>
+            </div>
+
+            <div class="gesture-guide">
+                <h3>Gesture Guide</h3>
+                <div class="guide-item" id="guide-next">
+                    <span class="emoji">✋</span>
+                    <span>Next Slide</span>
+                </div>
+                <div class="guide-item" id="guide-prev">
+                    <span class="emoji">✌️</span>
+                    <span>Prev Slide</span>
+                </div>
+                <div class="guide-item" id="guide-full">
+                    <span class="emoji">☝️</span>
+                    <span>Full Screen</span>
+                </div>
+                <div class="guide-item" id="guide-stop">
+                    <span class="emoji">✊</span>
+                    <span>Stop/Freeze</span>
+                </div>
+                <span class="emoji">🤟</span>
+                <span>Play Sound</span>
+            </div>
+            <div class="guide-item" id="guide-end">
+                <span class="emoji">👍</span>
+                <span>End Show</span>
+            </div>
+
+            <div class="status-display">
+                <p>Status: <span id="gesture-status">Waiting...</span></p>
+                <div id="mic-status" class="mic-status" style="margin-top: 10px; font-size: 0.9rem; color: #94a3b8;">
+                    🎙️ Voice: <span id="voice-text">Listening...</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Presentation Area -->
+        <main class="presentation-area" id="presentation-area">
+            <div class="placeholder-content">
+                <h2>Welcome to GesturePPT</h2>
+                <p>Upload a presentation (PDF or PPTX) to begin.</p>
+                <p>Ensure your hand is visible in the camera preview.</p>
+            </div>
+            <canvas id="pdf-render"></canvas>
+            <div id="loading-overlay" class="loading-overlay" style="display: none;">
+                <div class="spinner"></div>
+                <p>Converting PPTX... <br><span style="font-size: 0.8rem; opacity: 0.7">(This can take up to 20s)</span>
+                </p>
+            </div>
+            <div id="pptx-render"></div> <!-- Container for PPTX -->
+
+            <!-- Manual Navigation Controls (Fallback) -->
+            <div class="manual-controls"
+                style="position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 20px; z-index: 2000;">
+                <button id="btn-prev"
+                    style="padding: 10px 20px; font-size: 1.2rem; cursor: pointer; background: rgba(255,255,255,0.9); border: none; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">⬅️
+                    Prev</button>
+                <button id="btn-next"
+                    style="padding: 10px 20px; font-size: 1.2rem; cursor: pointer; background: rgba(255,255,255,0.9); border: none; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">Next
+                    ➡️</button>
+            </div>
+        </main>
+    </div>
+
+    <!-- Audio Element for OK Gesture -->
+    <!-- We will use Howler, but strictly speaking we can load an mp3 here or generated sound -->
+
+
+    <script src="script.js"></script>
+</body>
+
+</html>
