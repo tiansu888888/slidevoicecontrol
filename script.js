@@ -634,10 +634,10 @@ function setupVoiceControl() {
 
     const recognition = new SpeechRecognition();
     recognition.continuous = true;
-    recognition.interimResults = false;
-    // zh-CN works for Mandarin + recognises many English words spoken by Chinese speakers.
-    // Change to 'en-US' if you want English-only.
-    recognition.lang = 'zh-CN';
+    recognition.interimResults = true;  // Show live what Chrome hears
+    // 'en-US' reliably recognises 'next', 'back', 'stop' etc.
+    // zh-CN does NOT reliably recognise English command words — use en-US.
+    recognition.lang = 'en-US';
 
     let isListening = false;
 
@@ -678,10 +678,29 @@ function setupVoiceControl() {
     };
 
     recognition.onresult = (event) => {
-        const transcript = event.results[event.results.length - 1][0].transcript.trim().toLowerCase();
-        console.log("Voice Command:", transcript);
-        document.getElementById('voice-text').innerText = `"${transcript}"`;
-        processVoiceCommand(transcript);
+        let interim = '';
+        let final = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+            const t = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+                final += t;
+            } else {
+                interim += t;
+            }
+        }
+        // Show live interim in grey so user can see what Chrome hears
+        const voiceEl = document.getElementById('voice-text');
+        if (interim) {
+            voiceEl.innerText = '🎤 ' + interim;
+            voiceEl.style.color = '#94a3b8'; // grey = interim
+        }
+        if (final) {
+            const cmd = final.trim().toLowerCase();
+            console.log("Voice Final:", cmd);
+            voiceEl.innerText = '"' + cmd + '"';
+            voiceEl.style.color = '#e2e8f0'; // white = final
+            processVoiceCommand(cmd);
+        }
     };
 
     try {
@@ -910,51 +929,53 @@ async function predictWebcam() {
     }
 }
 
-// ── MediaPipe Startup ──────────────────────────────────────────────────────
-// The ES-module loader in index.html fires 'mediapipe-ready' once classes are
-// assigned to window.  We wait for it before calling createGestureRecognizer.
-async function startApp() {
-    // Re-check window globals (ES module may have assigned them by now)
+// ── STARTUP ────────────────────────────────────────────────────────────────
+// Voice starts immediately — no dependency on MediaPipe.
+// Gesture polls for window.GestureRecognizer (set by ES module in index.html).
+
+// 1. Voice: start right away
+try {
+    setupVoiceControl();
+} catch (e) {
+    console.error("Voice Control Failed:", e);
+}
+
+// 2. Gesture: poll until GestureRecognizer is available (ES module may still be loading)
+let _mpPollCount = 0;
+const _mpPollMax = 40;  // 40 × 500ms = 20 seconds max wait
+
+function _pollForMediaPipe() {
+    // Pick up classes if the ES module has assigned them to window
     if (!GestureRecognizer && typeof window.GestureRecognizer !== 'undefined') {
         GestureRecognizer = window.GestureRecognizer;
         FilesetResolver = window.FilesetResolver;
         DrawingUtils = window.DrawingUtils;
-        console.log('[MediaPipe] Globals picked up from window at startApp():', { GestureRecognizer, FilesetResolver, DrawingUtils });
+        console.log('[MediaPipe] Globals detected by poll:', { GestureRecognizer, FilesetResolver, DrawingUtils });
     }
 
     if (GestureRecognizer && FilesetResolver) {
-        try {
-            await createGestureRecognizer();
-        } catch (e) {
-            console.error("Gesture Recognizer Failed:", e);
-            const statusEl = document.getElementById('gesture-status');
-            statusEl.innerText = "Gestures Disabled. Use Buttons.";
-            statusEl.style.color = "orange";
-            enableCam();
-        }
-    } else {
-        console.warn('[MediaPipe] GestureRecognizer not available — camera only mode.');
-        const statusEl = document.getElementById('gesture-status');
-        statusEl.innerText = "Gestures Unavailable. Use Buttons.";
-        statusEl.style.color = "orange";
-        enableCam();
+        console.log('[MediaPipe] Ready — launching gesture recognizer.');
+        createGestureRecognizer()
+            .catch(e => {
+                console.error("Gesture Recognizer Failed:", e);
+                document.getElementById('gesture-status').innerText = "Gestures Disabled. Use Buttons.";
+                enableCam();
+            });
+        return; // done — stop polling
     }
 
-    try { setupVoiceControl(); } catch (e) { console.error("Voice Control Failed:", e); }
+    _mpPollCount++;
+    if (_mpPollCount >= _mpPollMax) {
+        // Timed out — start camera-only mode
+        console.warn('[MediaPipe] Timed out waiting for GestureRecognizer. Camera-only mode.');
+        document.getElementById('gesture-status').innerText = "Gestures Unavailable. Use Buttons.";
+        document.getElementById('gesture-status').style.color = "orange";
+        enableCam();
+        return;
+    }
+
+    setTimeout(_pollForMediaPipe, 500);
 }
 
-// Listen for the custom event fired by the ES module loader
-window.addEventListener('mediapipe-ready', () => {
-    console.log('[MediaPipe] mediapipe-ready event received. Starting app...');
-    startApp();
-});
-
-// Safety net: if somehow the event already fired before this listener registered,
-// or if we're running locally without the module (e.g. file:// with local bundle),
-// fall back after a short delay.
-setTimeout(() => {
-    if (!window._appStarted) {
-        console.warn('[MediaPipe] mediapipe-ready never fired — starting in fallback mode.');
-        startApp();
-    }
-}, 8000);
+// Start polling after a short delay (give the ES module a head-start)
+setTimeout(_pollForMediaPipe, 500);
