@@ -172,29 +172,38 @@ function endPresentation() {
 
 // --- File Handling (PDF & PPTX) ---
 
-const pdfjsLib = window.pdfjsLib || window['pdfjs-dist/build/pdf'];
+// --- Library Detection: PDF.js ---
+// PDF.js may load asynchronously from CDN fallback, so we detect lazily.
+// getpdfjsLib() will be called at point-of-use inside loadPDF().
+function getpdfjsLib() {
+    return window.pdfjsLib
+        || window['pdfjs-dist/build/pdf']
+        || (window.pdfjsLib = window.pdfjsLib); // explicit re-check
+}
+
+let pdfjsLib = getpdfjsLib();
+
 if (pdfjsLib) {
-    console.log("PDF.js Lib Loaded. Setting worker...");
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'libs/pdfjs/pdf.worker.min.js';
-    console.log("Worker Set to: " + pdfjsLib.GlobalWorkerOptions.workerSrc);
-    // console.log("PDF Worker disabled for local file compatibility (forcing main thread).");
+    console.log("PDF.js Lib Loaded (early). Setting worker...");
+    if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'libs/pdfjs/pdf.worker.min.js';
+    }
+    console.log("Worker:", pdfjsLib.GlobalWorkerOptions.workerSrc);
 } else {
-    console.error("PDF.js not found in window");
-    alert("Error: PDF Library not loaded within script.js scope.");
+    // CDN fallback may still be loading — set a deferred check.
+    console.warn("PDF.js not yet available at script parse time. Will retry at file load.");
 }
 
 // Check JSZip
 if (!window.JSZip) {
-    console.error("JSZip not found!");
-    alert("CRITICAL: JSZip library not loaded. Check console.");
+    console.error("JSZip not found! PPTX support will be unavailable.");
 } else {
     console.log("JSZip found:", window.JSZip);
-    // Attempt rudimentary version check if possible
 }
 
-// Check PPTXjs
+// Check jQuery (required for PPTXjs)
 if (!window.jQuery) {
-    alert("CRITICAL: jQuery not loaded.");
+    console.error("CRITICAL: jQuery not loaded. PPTX support disabled.");
 }
 
 // Manual Navigation
@@ -278,7 +287,9 @@ document.getElementById('fileInput').addEventListener('change', function (e) {
         loadPPTX(file);
     } else {
         console.warn("Unsupported file type:", file.type, fileName);
-        alert("Unsupported file type: " + file.type + "\nPlease upload a .pdf or .pptx file.");
+        const statusEl2 = document.getElementById('gesture-status');
+        statusEl2.innerText = "Unsupported file. Please upload a .pdf or .pptx file.";
+        statusEl2.style.color = "#f87171";
         endPresentation();
     }
 });
@@ -287,14 +298,21 @@ function loadPDF(data) {
     const statusEl = document.getElementById('gesture-status');
     statusEl.innerText = "Rendering PDF...";
 
-    // alert("Starting PDF Load..."); // Removed
-    if (!pdfjsLib) {
+    // Re-detect pdfjsLib at call time (CDN may have loaded it after script parsed)
+    const pdfLib = window.pdfjsLib || window['pdfjs-dist/build/pdf'];
+    if (!pdfLib) {
         console.error("PDF.js library not loaded");
-        statusEl.innerText = "Error: PDF Lib Missing";
+        statusEl.innerText = "Error: PDF Lib Missing. Reload and try again.";
+        statusEl.style.color = "#f87171";
         return;
     }
+    // Ensure worker is set
+    if (!pdfLib.GlobalWorkerOptions.workerSrc) {
+        pdfLib.GlobalWorkerOptions.workerSrc =
+            'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
 
-    pdfjsLib.getDocument(data).promise.then(function (pdf) {
+    pdfLib.getDocument(data).promise.then(function (pdf) {
         console.log("PDF Loaded! Pages: " + pdf.numPages);
         statusEl.innerText = "PDF Ready. Use Gestures.";
         statusEl.style.color = "#34d399"; // Success
@@ -306,9 +324,8 @@ function loadPDF(data) {
         renderPage(pageNum);
     }).catch(function (error) {
         console.error("Error loading PDF:", error);
-        statusEl.innerText = "PDF Load Error";
-        statusEl.style.color = "red";
-        alert("Error loading PDF: " + error.message);
+        statusEl.innerText = "PDF Load Error: " + error.message;
+        statusEl.style.color = "#f87171";
     });
 }
 

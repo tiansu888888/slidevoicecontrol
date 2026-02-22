@@ -75,23 +75,55 @@
 
     <link rel="stylesheet" href="style.css">
 
-    <!-- MediaPipe Hands (AI Vision) -->
-    <script src="libs/mediapipe/vision_bundle.js" crossorigin="anonymous"></script>
-    <!-- PDF.js -->
-    <script src="libs/pdfjs/pdf.min.js"></script>
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!--  Libraries – CDN primary, local fallback               -->
+    <!--  (Fixes GitHub Pages where libs/ folder may not exist) -->
+    <!-- ═══════════════════════════════════════════════════════ -->
 
-    <!-- PPTXjs Dependencies -->
-    <link rel="stylesheet" href="libs/pptxjs/css/pptxjs.css">
-    <script src="libs/others/jquery.min.js"></script>
-    <script src="libs/others/jszip.min.js"></script>
+    <!-- MediaPipe Hands (AI Vision) – local only (large WASM bundle) -->
+    <script src="libs/mediapipe/vision_bundle.js" crossorigin="anonymous"></script>
+
+    <!-- jQuery (CDN → local fallback) -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"
+        integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
+    <script>window.jQuery || document.write('<script src="libs/others/jquery.min.js"><\/script>');</script>
+
+    <!-- JSZip (CDN → local fallback) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" crossorigin="anonymous"></script>
+    <script>window.JSZip || document.write('<script src="libs/others/jszip.min.js"><\/script>');</script>
+
+    <!-- JSZip-Utils (local only – no CDN) -->
     <script src="libs/others/jszip-utils.min.js"></script>
-    <script src="libs/others/d3.min.js"></script>
+
+    <!-- D3 (CDN → local fallback) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.17/d3.min.js" crossorigin="anonymous"></script>
+    <script>window.d3 || document.write('<script src="libs/others/d3.min.js"><\/script>');</script>
+
+    <!-- NVD3 (local only) -->
     <script src="libs/others/nv.d3.min.js"></script>
+
+    <!-- PPTXjs (local only – no CDN available) -->
+    <link rel="stylesheet" href="libs/pptxjs/css/pptxjs.css">
     <script src="libs/pptxjs/js/pptxjs.js"></script>
     <script src="libs/pptxjs/js/divs2slides.js"></script>
 
-    <!-- Howler for Audio -->
-    <script src="libs/others/howler.min.js"></script>
+    <!-- Howler.js for Audio (CDN → local fallback) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.4/howler.min.js" crossorigin="anonymous"></script>
+    <script>window.Howl || document.write('<script src="libs/others/howler.min.js"><\/script>');</script>
+
+    <!-- PDF.js (CDN → local fallback) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" crossorigin="anonymous"></script>
+    <script>
+        if (window.pdfjsLib) {
+            // Set worker from CDN to match the loaded version
+            window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+                'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+            console.log('PDF.js loaded from CDN. Worker set.');
+        } else {
+            // Fallback: try local copy
+            document.write('<script src="libs/pdfjs/pdf.min.js"><\/script>');
+        }
+    </script>
 </head>
 
 <body>
