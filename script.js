@@ -4,29 +4,34 @@
 console.log("Script.js Global Execution Started");
 
 window.onerror = function (message, source, lineno, colno, error) {
-    console.error("Global Error Caught:", message, "Line:", lineno);
-    alert("Script Error: " + message + "\nLine: " + lineno);
+    console.error("Global Error Caught:", message, "Line:", lineno, "Error:", error);
+    // Do NOT alert here — it blocks the app on every minor error
     return false;
 };
 
 
 let GestureRecognizer, FilesetResolver, DrawingUtils;
 
-// Safely attempt to load globals
-// FIX: All MediaPipe classes live under the single `vision` global exported by vision_bundle.js.
-// fileset_resolver and drawing_utils do NOT exist as separate globals.
+// Detect MediaPipe globals — CDN @mediapipe/tasks-vision exposes classes directly on window.
+// Fallback: some bundle versions expose them under window.vision.
 try {
-    if (typeof vision !== 'undefined') {
+    if (typeof window.GestureRecognizer !== 'undefined') {
+        // CDN build: classes are directly on window
+        GestureRecognizer = window.GestureRecognizer;
+        FilesetResolver = window.FilesetResolver;
+        DrawingUtils = window.DrawingUtils;
+        console.log("MediaPipe globals loaded (direct window exports):", { GestureRecognizer, FilesetResolver, DrawingUtils });
+    } else if (typeof vision !== 'undefined' && vision.GestureRecognizer) {
+        // Some bundled builds put everything under window.vision
         GestureRecognizer = vision.GestureRecognizer;
         FilesetResolver = vision.FilesetResolver;
         DrawingUtils = vision.DrawingUtils;
-        console.log("MediaPipe globals loaded successfully.", { GestureRecognizer, FilesetResolver, DrawingUtils });
+        console.log("MediaPipe globals loaded (vision namespace):", { GestureRecognizer, FilesetResolver, DrawingUtils });
     } else {
-        console.warn("MediaPipe 'vision' object not found. Gestures may not work.");
+        console.warn("MediaPipe not found on window. Gestures will be disabled.");
     }
 } catch (e) {
     console.error("Error mapping MediaPipe globals:", e);
-    console.warn("Gesture Library Error: " + e.message + ". Presentation can still proceed.");
 }
 
 const video = document.getElementById("webcam");
@@ -267,18 +272,17 @@ document.getElementById('fileInput').addEventListener('change', function (e) {
         };
 
         fileReader.onerror = function (err) {
-            console.error("FileReader Error:", err);
-            statusEl.innerText = "File Read Failed";
-            statusEl.style.color = "red";
-            alert("Error reading file: " + fileReader.error.message);
+            console.error("FileReader Error:", err, fileReader.error);
+            statusEl.innerText = "File Read Failed: " + (fileReader.error ? fileReader.error.message : "Unknown error");
+            statusEl.style.color = "#f87171";
         };
 
         try {
             fileReader.readAsArrayBuffer(file);
         } catch (e) {
             console.error("FileReader Exception:", e);
-            statusEl.innerText = "Read Exception";
-            alert("FileReader Failed: " + e.message);
+            statusEl.innerText = "File Read Error: " + e.message;
+            statusEl.style.color = "#f87171";
         }
     }
     else if (fileName.endsWith(".pptx") || file.type.includes("presentation") || fileName.endsWith(".ppt")) {
@@ -362,9 +366,9 @@ function loadPPTX(file) {
             }
         });
     } catch (e) {
-        console.error(e);
-        statusEl.innerText = "Error initializing PPTX engine.";
-        alert("PPTX Engine Crash: " + e.message);
+        console.error('PPTX engine crash:', e);
+        statusEl.innerText = "PPTX Error: " + e.message + " — Try uploading as PDF instead.";
+        statusEl.style.color = "#f87171";
         return;
     }
 
@@ -395,8 +399,8 @@ function loadPPTX(file) {
         } else if (attempts >= maxAttempts) {
             clearInterval(checkInterval);
             loadingOverlay.style.display = 'none';
-            statusEl.innerText = "PPTX Timeout.";
-            alert("The PPTX file is taking too long to load (over 20s).\n\nIt is likely too complex for the browser-based converter.\n\nRECOMMENDATION: Please save your PPTX as a PDF and upload the PDF file instead for instant, perfect rendering.");
+            statusEl.innerText = "PPTX Timeout — file may be too complex. Try saving as PDF.";
+            statusEl.style.color = "#f87171";
             endPresentation();
         }
     }, 100);
@@ -631,28 +635,45 @@ function setupVoiceControl() {
     const recognition = new SpeechRecognition();
     recognition.continuous = true;
     recognition.interimResults = false;
-    recognition.lang = 'en-US';
+    // zh-CN works for Mandarin + recognises many English words spoken by Chinese speakers.
+    // Change to 'en-US' if you want English-only.
+    recognition.lang = 'zh-CN';
+
+    let isListening = false;
+
+    // Expose manual restart for the sidebar button
+    window._restartVoice = () => {
+        try {
+            recognition.stop();
+            setTimeout(() => { recognition.start(); }, 400);
+        } catch (e) { /* ignore */ }
+    };
 
     recognition.onstart = () => {
+        isListening = true;
         document.getElementById('voice-text').innerText = "Listening...";
-        document.getElementById('mic-status').style.color = "#34d399"; // Success green
+        document.getElementById('mic-status').style.color = "#34d399";
     };
 
     recognition.onerror = (event) => {
         console.error("Speech Error:", event.error);
         if (event.error === 'not-allowed') {
-            document.getElementById('voice-text').innerText = "Mic Access Denied";
-            document.getElementById('mic-status').style.color = "#f87171"; // Red
-        } else {
-            // Often 'no-speech' or 'network', just ignore or show status
-            // document.getElementById('voice-text').innerText = "Standby...";
+            isListening = false; // Stop retrying if mic denied
+            document.getElementById('voice-text').innerText = "Mic Denied";
+            document.getElementById('mic-status').style.color = "#f87171";
         }
+        // For 'no-speech', 'network', 'audio-capture' etc — onend will restart
     };
 
     recognition.onend = () => {
-        // Auto-restart if we are supposed to be running, but prevent infinite loops if denied
-        if (webcamRunning && document.getElementById('voice-text').innerText !== "Mic Access Denied") {
-            try { recognition.start(); } catch (e) { /* ignore already started */ }
+        // Always restart unless mic was explicitly denied
+        const statusText = document.getElementById('voice-text').innerText;
+        if (statusText !== "Mic Denied") {
+            document.getElementById('voice-text').innerText = "Standby...";
+            setTimeout(() => {
+                try { recognition.start(); }
+                catch (e) { /* already started — ignore */ }
+            }, 300);
         }
     };
 
@@ -660,22 +681,23 @@ function setupVoiceControl() {
         const transcript = event.results[event.results.length - 1][0].transcript.trim().toLowerCase();
         console.log("Voice Command:", transcript);
         document.getElementById('voice-text').innerText = `"${transcript}"`;
-
         processVoiceCommand(transcript);
     };
 
     try {
         recognition.start();
+        console.log('[Voice] Speech recognition started.');
     } catch (e) {
         console.error("Error starting speech:", e);
     }
 }
 
 function processVoiceCommand(cmd) {
-    // Simple keyword matching
+    // Simple keyword matching — bilingual English + Chinese
     console.log("Processing Voice Command:", cmd);
 
-    if (cmd.includes("next")) {
+    // ── Next slide ──────────────────────────────────────────
+    if (cmd.includes("next") || cmd.includes("下一") || cmd.includes("下一页") || cmd.includes("下一张")) {
         triggerVisualFeedback("Voice: Next ➡️");
         if (isPresentationActive) {
             onNextPage();
@@ -683,30 +705,34 @@ function processVoiceCommand(cmd) {
             console.warn("Command ignored: Presentation not active");
         }
     }
-    else if (cmd.includes("back") || cmd.includes("previous")) {
+    // ── Prev slide ──────────────────────────────────────────
+    else if (cmd.includes("back") || cmd.includes("previous") || cmd.includes("上一") || cmd.includes("上一页") || cmd.includes("上一张")) {
         triggerVisualFeedback("Voice: Back ⬅️");
         if (isPresentationActive) {
             onPrevPage();
         }
     }
-    else if (cmd.includes("thank you") || cmd.includes("stop") || cmd.includes("end presentation")) {
+    // ── End presentation ────────────────────────────────────
+    else if (cmd.includes("thank you") || cmd.includes("stop") || cmd.includes("end presentation")
+        || cmd.includes("结束") || cmd.includes("停止") || cmd.includes("退出")) {
         triggerVisualFeedback("Voice: End 👍");
         endPresentation();
     }
-    else if (cmd.includes("play") || cmd.includes("sound") || cmd.includes("music")) {
+    // ── Play sound ──────────────────────────────────────────
+    else if (cmd.includes("play") || cmd.includes("sound") || cmd.includes("music")
+        || cmd.includes("播放") || cmd.includes("音乐")) {
         triggerVisualFeedback("Voice: Playing 🎵");
         okSound.play().catch(e => console.warn("Audio play failed:", e));
     }
-    else if (cmd.includes("full") || cmd.includes("screen")) {
+    // ── Fullscreen ──────────────────────────────────────────
+    else if (cmd.includes("full") || cmd.includes("screen") || cmd.includes("全屏")) {
         triggerVisualFeedback("Voice: Full Screen ⛶");
         enterFullScreen();
     }
-    else if (cmd.includes("exit") || cmd.includes("leave")) {
+    // ── Exit fullscreen ─────────────────────────────────────
+    else if (cmd.includes("exit") || cmd.includes("leave") || cmd.includes("退出全屏")) {
         triggerVisualFeedback("Voice: Exit Full Screen ❌");
         exitFullScreen();
-    } else {
-        // Catch-all feedback for unrecognized but processed
-        // triggerVisualFeedback("Heard: " + cmd);
     }
 }
 
@@ -737,8 +763,9 @@ async function createGestureRecognizer() {
     const statusEl = document.getElementById('gesture-status');
     statusEl.innerText = "Loading AI Model...";
 
-    // Path configuration for Localhost/File
-    const visionPath = "libs/mediapipe/wasm";
+    // WASM files must match the CDN bundle version.
+    // Local wasm files are incomplete — use CDN for wasm, local for the .task model.
+    const visionPath = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm";
     const modelPath = "libs/mediapipe/gesture_recognizer.task";
 
     console.log("Initializing MediaPipe with paths:", { visionPath, modelPath });
@@ -883,23 +910,51 @@ async function predictWebcam() {
     }
 }
 
-// Start
-try {
-    createGestureRecognizer();
-} catch (e) {
-    console.error("Gesture Recognizer Failed:", e);
-    // Fallback: Enable Camera anyway so user feels it works
-    const statusEl = document.getElementById('gesture-status');
-    statusEl.innerText = "Gestures Disabled (Local Mode)";
-    statusEl.style.color = "orange";
+// ── MediaPipe Startup ──────────────────────────────────────────────────────
+// The ES-module loader in index.html fires 'mediapipe-ready' once classes are
+// assigned to window.  We wait for it before calling createGestureRecognizer.
+async function startApp() {
+    // Re-check window globals (ES module may have assigned them by now)
+    if (!GestureRecognizer && typeof window.GestureRecognizer !== 'undefined') {
+        GestureRecognizer = window.GestureRecognizer;
+        FilesetResolver = window.FilesetResolver;
+        DrawingUtils = window.DrawingUtils;
+        console.log('[MediaPipe] Globals picked up from window at startApp():', { GestureRecognizer, FilesetResolver, DrawingUtils });
+    }
 
-    // Attempt to start camera without AI
-    enableCam();
+    if (GestureRecognizer && FilesetResolver) {
+        try {
+            await createGestureRecognizer();
+        } catch (e) {
+            console.error("Gesture Recognizer Failed:", e);
+            const statusEl = document.getElementById('gesture-status');
+            statusEl.innerText = "Gestures Disabled. Use Buttons.";
+            statusEl.style.color = "orange";
+            enableCam();
+        }
+    } else {
+        console.warn('[MediaPipe] GestureRecognizer not available — camera only mode.');
+        const statusEl = document.getElementById('gesture-status');
+        statusEl.innerText = "Gestures Unavailable. Use Buttons.";
+        statusEl.style.color = "orange";
+        enableCam();
+    }
+
+    try { setupVoiceControl(); } catch (e) { console.error("Voice Control Failed:", e); }
 }
 
+// Listen for the custom event fired by the ES module loader
+window.addEventListener('mediapipe-ready', () => {
+    console.log('[MediaPipe] mediapipe-ready event received. Starting app...');
+    startApp();
+});
 
-try {
-    setupVoiceControl();
-} catch (e) {
-    console.error("Voice Control Failed:", e);
-}
+// Safety net: if somehow the event already fired before this listener registered,
+// or if we're running locally without the module (e.g. file:// with local bundle),
+// fall back after a short delay.
+setTimeout(() => {
+    if (!window._appStarted) {
+        console.warn('[MediaPipe] mediapipe-ready never fired — starting in fallback mode.');
+        startApp();
+    }
+}, 8000);

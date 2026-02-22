@@ -80,8 +80,21 @@
     <!--  (Fixes GitHub Pages where libs/ folder may not exist) -->
     <!-- ═══════════════════════════════════════════════════════ -->
 
-    <!-- MediaPipe Hands (AI Vision) – local only (large WASM bundle) -->
-    <script src="libs/mediapipe/vision_bundle.js" crossorigin="anonymous"></script>
+    <!-- MediaPipe Tasks Vision – loaded as ES Module (only way to get GestureRecognizer) -->
+    <!-- Assigns to window.GestureRecognizer / FilesetResolver / DrawingUtils, then fires 'mediapipe-ready' -->
+    <script type="module">
+        try {
+            const mpVision = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/+esm');
+            window.GestureRecognizer = mpVision.GestureRecognizer;
+            window.FilesetResolver = mpVision.FilesetResolver;
+            window.DrawingUtils = mpVision.DrawingUtils;
+            console.log('[MediaPipe] ES module loaded. Classes assigned to window.');
+        } catch (e) {
+            console.error('[MediaPipe] Failed to load ES module:', e);
+        }
+        // Always fire the event so script.js isn't left waiting
+        window.dispatchEvent(new Event('mediapipe-ready'));
+    </script>
 
     <!-- jQuery (CDN → local fallback) -->
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"
@@ -115,13 +128,20 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" crossorigin="anonymous"></script>
     <script>
         if (window.pdfjsLib) {
-            // Set worker from CDN to match the loaded version
             window.pdfjsLib.GlobalWorkerOptions.workerSrc =
                 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
             console.log('PDF.js loaded from CDN. Worker set.');
         } else {
-            // Fallback: try local copy
-            document.write('<script src="libs/pdfjs/pdf.min.js"><\/script>');
+            // Fallback: load local copy, then set local worker
+            var s = document.createElement('script');
+            s.src = 'libs/pdfjs/pdf.min.js';
+            s.onload = function () {
+                if (window.pdfjsLib) {
+                    window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'libs/pdfjs/pdf.worker.min.js';
+                    console.log('PDF.js loaded from local. Worker set to local.');
+                }
+            };
+            document.head.appendChild(s);
         }
     </script>
 </head>
@@ -180,7 +200,14 @@
             <div class="status-display">
                 <p>Status: <span id="gesture-status">Waiting...</span></p>
                 <div id="mic-status" class="mic-status" style="margin-top: 10px; font-size: 0.9rem; color: #94a3b8;">
-                    🎙️ Voice: <span id="voice-text">Listening...</span>
+                    🎙️ Voice: <span id="voice-text">Starting...</span>
+                </div>
+                <button id="mic-restart-btn" onclick="window._restartVoice && window._restartVoice()" style="margin-top: 6px; padding: 4px 10px; font-size: 0.8rem; background: #334155;
+                           border: 1px solid #475569; border-radius: 6px; color: #e2e8f0; cursor: pointer;">
+                    🎤 Re-activate Mic
+                </button>
+                <div style="font-size: 0.72rem; color: #64748b; margin-top: 4px;">
+                    Say: <b>next / 下一张</b> &nbsp;|&nbsp; <b>back / 上一张</b> &nbsp;|&nbsp; <b>stop / 结束</b>
                 </div>
             </div>
         </aside>
